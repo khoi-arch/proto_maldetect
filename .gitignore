@@ -1,11 +1,4 @@
-# Data files
-data/
-*.csv
-*.pkl
 
-# Metadata & Logs
-*.log
-preprocess_audit_report.json
 
 # Python
 __pycache__/
