@@ -5,6 +5,7 @@ import pandas as pd
 import joblib
 import logging
 from pathlib import Path
+from sklearn.preprocessing import StandardScaler # Dùng Standard Scaling để tối ưu Transformer
 
 # ==========================================
 # CẤU HÌNH LOGGING
@@ -45,11 +46,10 @@ def run(train_csv_path, val_csv_path, dir_metadata, dir_processed, target_col):
     X_train = X_train[[c for c in X_train.columns if c in valid_cols]].copy()
     X_val = X_val[[c for c in X_val.columns if c in valid_cols]].copy()
 
-    artifacts = {"clipping_bounds": {}, "group_scales": {}}
+    artifacts = {"clipping_bounds": {}, "scalers": {}}
     
-    # THÊM MỚI: Biến lưu trữ báo cáo chi tiết các phép toán đã áp dụng
     audit_report = {
-        "pipeline_name": "Sensitive Preprocess Pipeline",
+        "pipeline_name": "Sensitive Preprocess Pipeline (Feature-wise Standard Scaled)",
         "groups": {}
     }
 
@@ -62,7 +62,7 @@ def run(train_csv_path, val_csv_path, dir_metadata, dir_processed, target_col):
             "action_label": g["action"],
             "semantic_type": g.get("semantic_type", "generic"),
             "transform_math": "None",
-            "scale_math": "None",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {}
         }
 
@@ -87,7 +87,6 @@ def run(train_csv_path, val_csv_path, dir_metadata, dir_processed, target_col):
             
             artifacts["clipping_bounds"][col] = {"lower": lower_fence, "upper": upper_fence}
             
-            # Ghi chép vào report
             audit_report["groups"][group_name]["features_detail"][col] = {
                 "clipped_at": {"lower": round(lower_fence, 6), "upper": round(upper_fence, 6)}
             }
@@ -104,33 +103,28 @@ def run(train_csv_path, val_csv_path, dir_metadata, dir_processed, target_col):
         if action in ["TRANSFORM_LONG_TAIL_RIGHT", "TRANSFORM_LONG_TAIL_LEFT", "TRANSFORM_HEAVY_TAIL"]:
             X_train[cols] = np.sign(X_train[cols]) * np.sqrt(np.abs(X_train[cols]))
             X_val[cols] = np.sign(X_val[cols]) * np.sqrt(np.abs(X_val[cols]))
-            
-            # Ghi chép vào report
             audit_report["groups"][group_name]["transform_math"] = "Signed Square Root (np.sign(x) * sqrt(|x|))"
         elif action == "TRANSFORM_OUTLIER":
-             audit_report["groups"][group_name]["transform_math"] = "Outlier Clipped Only (No non-linear transform)"
+             audit_report["groups"][group_name]["transform_math"] = "Outlier Clipped Only"
 
     # ==========================================
-    # STEP 3 — SCALING (Group Max-Abs Scaling)
+    # STEP 3 — SCALING (Feature-wise Standard Scaling)
+    # THAY ĐỔI: Không scale theo Max của cả group nữa. Scale độc lập từng cột.
+    # FT-Transformer cực kỳ chuộng dữ liệu có Mean=0 và Std=1
     # ==========================================
-    logging.info("   [3/3] Scaling (Group-wise Max-Abs Strategy)...")
+    logging.info("   [3/3] Scaling (Feature-wise StandardScaler)...")
+    
+    # Lọc ra các cột cần scale (Bỏ qua Binary/Rare vì chúng có cấu trúc rời rạc đặc biệt)
+    cols_to_scale = []
     for group_name, g in groups_summary.items():
-        cols = [c for c in g["features"].keys() if c in X_train.columns]
-        if not cols: continue
-        
-        if "BINARY" in g["action"] or "RARE" in g["action"]:
-            audit_report["groups"][group_name]["scale_math"] = "Skipped (Binary/Rare feature)"
-            continue
-
-        max_val = np.abs(X_train[cols].values).max()
-        scale = max(float(max_val), EPS)
-
-        X_train[cols] = X_train[cols] / scale
-        X_val[cols] = X_val[cols] / scale
-        artifacts["group_scales"][group_name] = scale
-        
-        # Ghi chép vào report
-        audit_report["groups"][group_name]["scale_math"] = f"Group Max-Abs Scaling (Divided by {round(scale, 6)})"
+        if "BINARY" not in g["action"] and "RARE" not in g["action"]:
+            cols_to_scale.extend([c for c in g["features"].keys() if c in X_train.columns])
+    
+    if cols_to_scale:
+        scaler = StandardScaler()
+        X_train[cols_to_scale] = scaler.fit_transform(X_train[cols_to_scale])
+        X_val[cols_to_scale] = scaler.transform(X_val[cols_to_scale])
+        artifacts["scalers"]["main_standard_scaler"] = scaler
 
     # ==========================================
     # SAVE & EXPORT
@@ -147,7 +141,6 @@ def run(train_csv_path, val_csv_path, dir_metadata, dir_processed, target_col):
     X_val.to_csv(os.path.join(dir_processed, "val_processed.csv"), index=False)
     joblib.dump(artifacts, os.path.join(dir_metadata, "preprocess_artifacts.pkl"))
 
-    # XUẤT FILE BÁO CÁO (AUDIT REPORT)
     report_path = os.path.join(dir_metadata, "preprocess_audit_report.json")
     with open(report_path, 'w', encoding='utf-8') as f:
         json.dump(audit_report, f, indent=4, ensure_ascii=False)

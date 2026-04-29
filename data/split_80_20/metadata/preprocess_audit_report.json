@@ -1,11 +1,11 @@
 {
-    "pipeline_name": "Sensitive Preprocess Pipeline",
+    "pipeline_name": "Sensitive Preprocess Pipeline (Feature-wise Standard Scaled)",
     "groups": {
         "Group_0": {
             "action_label": "KEEP_RAW_BINARY",
             "semantic_type": "generic",
             "transform_math": "None",
-            "scale_math": "Skipped (Binary/Rare feature)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "psxview.not_in_eprocess_pool": {
                     "clipped_at": {
@@ -19,7 +19,7 @@
             "action_label": "KEEP_RAW_NORMAL",
             "semantic_type": "generic",
             "transform_math": "None",
-            "scale_math": "Group Max-Abs Scaling (Divided by 27.0)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "svcscan.process_services": {
                     "clipped_at": {
@@ -39,7 +39,7 @@
             "action_label": "KEEP_RAW_NORMAL",
             "semantic_type": "generic",
             "transform_math": "None",
-            "scale_math": "Group Max-Abs Scaling (Divided by 53.170732)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "dlllist.avg_dlls_per_proc": {
                     "clipped_at": {
@@ -53,7 +53,7 @@
             "action_label": "KEEP_RAW_NORMAL",
             "semantic_type": "generic",
             "transform_math": "None",
-            "scale_math": "Group Max-Abs Scaling (Divided by 208.0)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "handles.ntimer": {
                     "clipped_at": {
@@ -85,7 +85,7 @@
             "action_label": "KEEP_RAW_NORMAL",
             "semantic_type": "generic",
             "transform_math": "None",
-            "scale_math": "Group Max-Abs Scaling (Divided by 2026.0)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "handles.nmutant": {
                     "clipped_at": {
@@ -111,7 +111,7 @@
             "action_label": "KEEP_RAW_NORMAL",
             "semantic_type": "generic",
             "transform_math": "None",
-            "scale_math": "Group Max-Abs Scaling (Divided by 7892.0)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "dlllist.ndlls": {
                     "clipped_at": {
@@ -130,8 +130,8 @@
         "Group_6": {
             "action_label": "TRANSFORM_OUTLIER",
             "semantic_type": "generic",
-            "transform_math": "Outlier Clipped Only (No non-linear transform)",
-            "scale_math": "Group Max-Abs Scaling (Divided by 0.059181)",
+            "transform_math": "Outlier Clipped Only",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "ldrmodules.not_in_load_avg": {
                     "clipped_at": {
@@ -150,8 +150,8 @@
         "Group_7": {
             "action_label": "TRANSFORM_OUTLIER",
             "semantic_type": "generic",
-            "transform_math": "Outlier Clipped Only (No non-linear transform)",
-            "scale_math": "Group Max-Abs Scaling (Divided by 18.0)",
+            "transform_math": "Outlier Clipped Only",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "psxview.not_in_ethread_pool": {
                     "clipped_at": {
@@ -170,8 +170,8 @@
         "Group_8": {
             "action_label": "TRANSFORM_OUTLIER",
             "semantic_type": "generic",
-            "transform_math": "Outlier Clipped Only (No non-linear transform)",
-            "scale_math": "Group Max-Abs Scaling (Divided by 62.0)",
+            "transform_math": "Outlier Clipped Only",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "malfind.ninjections": {
                     "clipped_at": {
@@ -184,8 +184,8 @@
         "Group_9": {
             "action_label": "TRANSFORM_OUTLIER",
             "semantic_type": "generic",
-            "transform_math": "Outlier Clipped Only (No non-linear transform)",
-            "scale_math": "Group Max-Abs Scaling (Divided by 1129.0)",
+            "transform_math": "Outlier Clipped Only",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "malfind.protection": {
                     "clipped_at": {
@@ -204,8 +204,8 @@
         "Group_10": {
             "action_label": "TRANSFORM_OUTLIER",
             "semantic_type": "generic",
-            "transform_math": "Outlier Clipped Only (No non-linear transform)",
-            "scale_math": "Group Max-Abs Scaling (Divided by 2385.0)",
+            "transform_math": "Outlier Clipped Only",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "handles.nfile": {
                     "clipped_at": {
@@ -218,8 +218,8 @@
         "Group_11": {
             "action_label": "TRANSFORM_OUTLIER",
             "semantic_type": "generic",
-            "transform_math": "Outlier Clipped Only (No non-linear transform)",
-            "scale_math": "Group Max-Abs Scaling (Divided by 18559.0)",
+            "transform_math": "Outlier Clipped Only",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "malfind.commitCharge": {
                     "clipped_at": {
@@ -233,7 +233,7 @@
             "action_label": "TRANSFORM_LONG_TAIL_RIGHT",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 0.555161)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "psxview.not_in_session_false_avg": {
                     "clipped_at": {
@@ -253,7 +253,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "count",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 7.874008)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "pslist.nproc": {
                     "clipped_at": {
@@ -267,7 +267,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 5.09902)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "svcscan.fs_drivers": {
                     "clipped_at": {
@@ -287,7 +287,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 0.259346)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "ldrmodules.not_in_init_avg": {
                     "clipped_at": {
@@ -301,7 +301,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 0.637096)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "psxview.not_in_pspcid_list_false_avg": {
                     "clipped_at": {
@@ -333,7 +333,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 14.899664)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "modules.nmodules": {
                     "clipped_at": {
@@ -359,7 +359,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 19.874607)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "svcscan.shared_process_services": {
                     "clipped_at": {
@@ -409,7 +409,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 11.357817)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "svcscan.nactive": {
                     "clipped_at": {
@@ -435,7 +435,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 23.159884)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "handles.ndirectory": {
                     "clipped_at": {
@@ -461,7 +461,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 37.56328)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "handles.nkey": {
                     "clipped_at": {
@@ -475,7 +475,7 @@
             "action_label": "TRANSFORM_HEAVY_TAIL",
             "semantic_type": "generic",
             "transform_math": "Signed Square Root (np.sign(x) * sqrt(|x|))",
-            "scale_math": "Group Max-Abs Scaling (Divided by 153.651391)",
+            "scale_math": "Feature-wise StandardScaler (Mean=0, Std=1)",
             "features_detail": {
                 "handles.nhandles": {
                     "clipped_at": {
