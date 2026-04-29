@@ -8,6 +8,7 @@ import math
 class FeatureTokenizer(nn.Module):
     """
     Chuyển đổi mỗi giá trị số thực (float) của từng feature thành một vector (embedding).
+    (GIỮ NGUYÊN BẢN CHẤT CỦA FT-TRANSFORMER)
     """
     def __init__(self, num_features, embed_dim):
         super().__init__()
@@ -26,17 +27,20 @@ class FeatureTokenizer(nn.Module):
 
 
 # ==========================================
-# 2. KIẾN TRÚC HIERARCHICAL FT-TRANSFORMER
+# 2. KIẾN TRÚC FT-TRANSFORMER CHÍNH
 # ==========================================
 class FTTransformer(nn.Module):
-    def __init__(self, num_features, num_classes, embed_dim=128, n_heads=8, n_layers=4, dropout=0.1, pooling_mode='mean'):
+    def __init__(self, num_features, num_classes, embed_dim=128, n_heads=8, n_layers=4, dropout=0.2, pooling_mode='cls'):
         """
-        Bản nâng cấp Hierarchical: Tách làm 2 chóp dự đoán để trị dứt điểm mất cân bằng.
-        - embed_dim=128, n_heads=8, n_layers=4 để đủ sức chứa cho 15 loại mã độc.
+        Bản hoàn thiện: 1 Head phẳng, thêm Pre-Norm khử nhiễu, chuẩn CLS pooling.
         """
         super().__init__()
         self.pooling_mode = pooling_mode
         self.embed_dim = embed_dim
+        
+        # --- PRE-NORM (SOTA Trick cho dữ liệu nhiễu) ---
+        # Chuẩn hóa ngay trên các con số nguyên thủy để tránh bùng nổ trước khi vào Tokenizer
+        self.pre_norm = nn.LayerNorm(num_features)
         
         # --- TOKENIZER & NORMALIZATION ---
         self.tokenizer = FeatureTokenizer(num_features, embed_dim)
@@ -64,20 +68,18 @@ class FTTransformer(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
         
-        # --- CLASSIFICATION HEADS ---
+        # --- CLASSIFICATION HEAD ---
         self.ln = nn.LayerNorm(embed_dim)
-        self.head_dropout = nn.Dropout(0.2)
+        self.head_dropout = nn.Dropout(0.3) # Tăng dropout nhẹ ở head
         
-        # Nhánh 1: Dự đoán Binary (Benign = 0 vs Malware = 1)
-        self.binary_head = nn.Linear(embed_dim, 2)
-        
-        # Nhánh 2: Dự đoán Family (15 loại Malware)
-        # num_classes gốc là 16, trừ đi 1 (Benign) còn 15
-        self.family_classes = num_classes - 1
-        self.family_head = nn.Linear(embed_dim, self.family_classes)
+        # CHỈ DÙNG 1 HEAD DUY NHẤT (Không chia chóp nữa)
+        self.head = nn.Linear(embed_dim, num_classes)
 
     def forward(self, x):
         b = x.shape[0] 
+        
+        # Áp dụng LayerNorm đầu vào để nén nhiễu (Pre-Norm)
+        x = self.pre_norm(x)
         
         x = self.tokenizer(x)
         x = self.token_norm(x)
@@ -93,29 +95,25 @@ class FTTransformer(nn.Module):
         x = self.transformer(x)
         
         if self.pooling_mode == 'cls':
-            out = x[:, 0]
+            out = x[:, 0] 
         else:
             out = x.mean(dim=1) 
             
         out = self.ln(out)
         out = self.head_dropout(out)
         
-        # Trả về cả 2 đầu logits cùng lúc
-        logits_binary = self.binary_head(out)
-        logits_family = self.family_head(out)
-        
-        return logits_binary, logits_family
+        return self.head(out)
 
 
 # ==========================================
 # 3. TEST NHANH MÔ HÌNH (DÙNG ĐỂ DEBUG)
 # ==========================================
 if __name__ == "__main__":
-    print("--- KIỂM TRA HIERARCHICAL FT-TRANSFORMER ---")
+    print("--- KIỂM TRA MÔ HÌNH FT-TRANSFORMER (BẢN TỐI ƯU TOÁN HỌC) ---")
     
     BATCH_SIZE = 64
     NUM_FEATURES = 50
-    NUM_CLASSES = 16 # 1 Benign + 15 Malware
+    NUM_CLASSES = 16 
     
     dummy_x = torch.randn(BATCH_SIZE, NUM_FEATURES)
     print(f"[*] Kích thước đầu vào: {dummy_x.shape}")
@@ -126,11 +124,10 @@ if __name__ == "__main__":
         embed_dim=128, 
         n_heads=8, 
         n_layers=4, 
-        pooling_mode='mean'
+        pooling_mode='cls'
     )
     
-    logits_bin, logits_fam = model(dummy_x)
+    output = model(dummy_x)
     
-    print(f"[*] Đầu ra Nhánh Binary: {logits_bin.shape} -> [Batch, 2]")
-    print(f"[*] Đầu ra Nhánh Family: {logits_fam.shape} -> [Batch, 15]")
-    print("[*] Trạng thái: ✅ Mô hình phân tầng chạy thành công!")
+    print(f"[*] Kích thước đầu ra: {output.shape} -> [Batch, 16 Classes]")
+    print("[*] Trạng thái: ✅ Mô hình chạy thành công!")
