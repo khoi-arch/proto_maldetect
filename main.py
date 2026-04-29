@@ -61,7 +61,7 @@ def main():
         pooling_mode='mean'
     )
 
-    # ==========================================
+# ==========================================
     # 4. BẮT ĐẦU HUẤN LUYỆN
     # ==========================================
     print("\n" + "="*50)
@@ -73,8 +73,9 @@ def main():
         train_loader=train_loader,
         val_loader=val_loader,
         train_labels=train_labels,
+        label_names=label_encoder.classes_,  # 👈 DÒNG NÀY LÀ THỦ PHẠM GÂY LỖI NẾU THIẾU
         device=device,
-        epochs=30,
+        epochs=50,
         lr=1e-3,
         weight_decay=1e-4,
         patience=5
