@@ -4,7 +4,7 @@ import torch.nn as nn
 import numpy as np
 from sklearn.metrics import f1_score, accuracy_score, classification_report
 from sklearn.utils.class_weight import compute_class_weight
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 
@@ -18,18 +18,25 @@ class FocalLoss(nn.Module):
     """
     def __init__(self, alpha=None, gamma=2.0):
         super().__init__()
-        self.alpha = alpha # Class weights
+        self.alpha = alpha # Class weights tensor
         self.gamma = gamma # Tham số phạt (thường dùng 2.0)
 
     def forward(self, logits, targets):
-        # Tính Cross Entropy cơ bản (không reduction)
-        ce_loss = nn.functional.cross_entropy(logits, targets, reduction='none', weight=self.alpha)
+        # 1. Tính CE cơ bản KHÔNG có weight để trích xuất đúng pt
+        ce_loss = nn.functional.cross_entropy(logits, targets, reduction='none')
         
         # Tính xác suất (pt) mà mô hình dự đoán cho class đúng
         pt = torch.exp(-ce_loss)
         
-        # Áp dụng công thức Focal Loss
+        # 2. Tính Focal Loss tiêu chuẩn
         focal_loss = ((1 - pt) ** self.gamma) * ce_loss
+        
+        # 3. Áp dụng Alpha weights thủ công vào từng mẫu
+        if self.alpha is not None:
+            # Lấy weight tương ứng với nhãn đúng của từng sample trong batch
+            alpha_t = self.alpha.gather(0, targets)
+            focal_loss = focal_loss * alpha_t
+            
         return focal_loss.mean()
 
 
@@ -86,37 +93,35 @@ def train_model(
 ):
     model = model.to(device)
 
-    print("\n[*] Đang cấu hình WeightedRandomSampler & Focal Loss...")
+    print("\n[*] Đang cấu hình Class Weights & Focal Loss...")
     
     # 1. Tính toán Trọng số cho Focal Loss
     classes = np.unique(train_labels)
     class_weights_np = compute_class_weight(class_weight='balanced', classes=classes, y=train_labels)
     alpha_weights = torch.tensor(class_weights_np, dtype=torch.float32).to(device)
     
-    # Dùng Focal Loss thay vì CrossEntropy
+    # Dùng Focal Loss đã được sửa lỗi
     criterion = FocalLoss(alpha=alpha_weights, gamma=2.0)
 
-    # 2. Cấu hình Dataloader Sampling (Ép batch có tỷ lệ class đồng đều)
-    class_counts = np.bincount(train_labels)
-    sample_weights_np = 1.0 / class_counts[train_labels]
-    
-    sampler = WeightedRandomSampler(
-        weights=sample_weights_np, 
-        num_samples=len(sample_weights_np), 
-        replacement=True
-    )
-    
-    # Build lại train_loader với Sampler (lưu ý: dùng sampler thì không dùng shuffle)
+    # 2. Bỏ Sampler, dùng DataLoader mặc định với shuffle=True để tránh xung đột kép
     train_loader = DataLoader(
         train_loader.dataset,
         batch_size=train_loader.batch_size,
-        sampler=sampler,
+        shuffle=True, # Bật shuffle để xáo trộn dữ liệu
         num_workers=train_loader.num_workers if hasattr(train_loader, 'num_workers') else 0
     )
 
-    # Optimizer & Scheduler
+    # Optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    
+    # Scheduler: Dùng OneCycleLR thay cho CosineAnnealingLR để có cơ chế Warm-up
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=lr,
+        steps_per_epoch=len(train_loader),
+        epochs=epochs,
+        pct_start=0.1 # Dùng 10% thời gian đầu để Warm-up
+    )
 
     best_f1 = 0
     patience_counter = 0
@@ -145,11 +150,11 @@ def train_model(
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
             optimizer.step()
+            # Chú ý: Cập nhật scheduler OneCycleLR sau mỗi batch (thay vì sau mỗi epoch)
+            scheduler.step() 
 
             total_loss += loss.item()
             loop.set_postfix(loss=loss.item())
-
-        scheduler.step()
 
         # Đánh giá trên tập Validation
         val_loss, val_acc, val_f1, val_report = evaluate(model, val_loader, device, criterion, label_names)
