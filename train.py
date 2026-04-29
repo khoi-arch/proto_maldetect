@@ -123,8 +123,8 @@ def train_model(
         optimizer, 
         mode='max',      # Maximize F1
         factor=0.5,      # Giảm LR đi một nửa
-        patience=3,      # Đợi 3 epoch không tiến bộ thì giảm LR
-        verbose=True
+        patience=3       # Đợi 3 epoch không tiến bộ thì giảm LR
+                         # (ĐÃ XÓA verbose=True)
     )
 
     best_f1 = 0
