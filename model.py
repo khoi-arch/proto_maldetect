@@ -100,9 +100,11 @@ class FTTransformer(nn.Module):
         out = self.ln(out)
         out = self.head_dropout(out)
         
-        # QUAN TRỌNG: Chỉ trả về vector đặc trưng (out), không gọi 2 cái head ở đây.
-        # Việc gọi head sẽ được thực hiện thủ công trong train.py để cô lập gradient.
-        return out
+        # Trả về cả 2 đầu logits cùng lúc
+        logits_binary = self.binary_head(out)
+        logits_family = self.family_head(out)
+        
+        return logits_binary, logits_family
 
 
 # ==========================================
@@ -127,12 +129,8 @@ if __name__ == "__main__":
         pooling_mode='mean'
     )
     
-    # Model giờ trả về embeddings
-    out = model(dummy_x)
-    logits_bin = model.binary_head(out)
-    logits_fam = model.family_head(out)
+    logits_bin, logits_fam = model(dummy_x)
     
-    print(f"[*] Đầu ra Vector Đặc trưng: {out.shape} -> [Batch, Embed_dim]")
     print(f"[*] Đầu ra Nhánh Binary: {logits_bin.shape} -> [Batch, 2]")
     print(f"[*] Đầu ra Nhánh Family: {logits_fam.shape} -> [Batch, 15]")
     print("[*] Trạng thái: ✅ Mô hình phân tầng chạy thành công!")

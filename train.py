@@ -12,7 +12,7 @@ from tqdm import tqdm
 # 1. TÙY CHỈNH LOSS FUNCTION
 # ==========================================
 class FocalLoss(nn.Module):
-    # Tăng smoothing lên 0.2 để giảm bớt sự cực đoan khi học 15 class khó
+    # Dùng smoothing 0.2 để giảm bớt sự cực đoan khi học 15 class khó
     def __init__(self, alpha=None, gamma=3.0, label_smoothing=0.2):
         super().__init__()
         self.alpha = alpha 
@@ -49,10 +49,7 @@ def evaluate(model, loader, device, criterion_family, label_names=None):
             x = x.to(device)
             y = y.to(device)
 
-            # Đổi cách gọi vì model giờ chỉ trả về embeddings (out)
-            out = model(x)
-            logits_binary = model.binary_head(out)
-            logits_family = model.family_head(out)
+            logits_binary, logits_family = model(x)
             
             target_binary = (y > 0).long()
             target_family = y - 1
@@ -62,8 +59,7 @@ def evaluate(model, loader, device, criterion_family, label_names=None):
             
             if malware_mask.sum() > 0:
                 loss_fam = criterion_family(logits_family[malware_mask], target_family[malware_mask])
-                # Tính loss logic để theo dõi (không dùng để backward)
-                loss = (loss_bin + loss_fam) / 2.0
+                loss = 0.3 * loss_bin + 0.7 * loss_fam
             else:
                 loss = loss_bin
 
@@ -97,21 +93,20 @@ def train_model(
     train_labels,  
     label_names,   
     device,
-    epochs=30,
-    lr=1e-3,
-    weight_decay=1e-4,
-    patience=5
+    epochs=50,       # Để 50 epoch do dùng Plateau cần thời gian
+    lr=2e-4,         # GIẢM LR KHỞI ĐIỂM
+    weight_decay=1e-3, # TĂNG REGULARIZATION
+    patience=8       # Tăng patience để đợi LR scheduler hoạt động
 ):
     model = model.to(device)
 
-    print("\n[*] Đang cấu hình CÔ LẬP GRADIENT (Gradient Isolation)...")
+    print("\n[*] Đang cấu hình Masked Focal Loss & ReduceLROnPlateau...")
     
     malware_labels = train_labels[train_labels > 0] - 1
     classes = np.unique(malware_labels)
     class_weights_np = compute_class_weight(class_weight='balanced', classes=classes, y=malware_labels)
     alpha_weights = torch.tensor(class_weights_np, dtype=torch.float32).to(device)
     
-    # Label smoothing 0.2
     criterion_family = FocalLoss(alpha=alpha_weights, gamma=3.0, label_smoothing=0.2)
 
     train_loader = DataLoader(
@@ -122,12 +117,14 @@ def train_model(
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr=lr,
-        steps_per_epoch=len(train_loader),
-        epochs=epochs,
-        pct_start=0.1 
+    
+    # DÙNG REDUCELRONPLATEAU THAY VÌ ONECYCLELR
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='max',      # Maximize F1
+        factor=0.5,      # Giảm LR đi một nửa
+        patience=3,      # Đợi 3 epoch không tiến bộ thì giảm LR
+        verbose=True
     )
 
     best_f1 = 0
@@ -148,47 +145,38 @@ def train_model(
 
             optimizer.zero_grad()
 
-            # 1. Lấy vector đặc trưng tổng hợp từ Transformer
-            out = model(x)
+            logits_binary, logits_family = model(x)
 
             target_binary = (y > 0).long() 
             target_family = y - 1          
             malware_mask = (y > 0)         
 
-            # --- CƠ CHẾ CÔ LẬP GRADIENT ---
-            
-            # BƯỚC 1: Dạy cho Transformer biết cách phân biệt 15 mã độc
-            loss_fam_tracker = 0
-            if malware_mask.sum() > 0:
-                logits_family = model.family_head(out)
-                loss_fam = criterion_family(logits_family[malware_mask], target_family[malware_mask])
-                # Ép toàn bộ mô hình cập nhật dựa trên độ khó của Family
-                loss_fam.backward(retain_graph=True) 
-                loss_fam_tracker = loss_fam.item()
-
-            # BƯỚC 2: Cắt đứt kết nối, chỉ cho Binary Head học đoạn ngọn
-            out_detached = out.detach() # CHỐT CHẶN: Gradient không đi xuống dưới chữ out này được nữa
-            logits_binary = model.binary_head(out_detached)
             loss_bin = nn.functional.cross_entropy(logits_binary, target_binary)
             
-            # Chỉ cập nhật trọng số của `self.binary_head`, Transformer giữ nguyên
-            loss_bin.backward()
+            if malware_mask.sum() > 0:
+                loss_fam = criterion_family(logits_family[malware_mask], target_family[malware_mask])
+                loss = 0.3 * loss_bin + 0.7 * loss_fam
+            else:
+                loss = loss_bin
+
+            loss.backward()
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
             optimizer.step()
-            scheduler.step() 
+            # XÓA BỎ scheduler.step() Ở ĐÂY RỒI NHÉ
 
-            # Log loss tổng chỉ để xem cho vui, không dùng backward
-            current_loss = loss_bin.item() + loss_fam_tracker
-            total_loss += current_loss
-            loop.set_postfix(loss=current_loss)
+            total_loss += loss.item()
+            loop.set_postfix(loss=loss.item())
 
         val_loss, val_acc, val_f1, val_report = evaluate(model, val_loader, device, criterion_family, label_names)
 
         print(f"\n📊 Epoch {epoch+1}")
         print(f"Train Loss: {total_loss/len(train_loader):.4f}")
         print(f"Val Loss: {val_loss:.4f} | Acc: {val_acc:.4f} | F1 Macro: {val_f1:.4f}")
+
+        # GỌI SCHEDULER Ở CUỐI EPOCH (Dựa vào val_f1)
+        scheduler.step(val_f1)
 
         if val_f1 > best_f1:
             best_f1 = val_f1
