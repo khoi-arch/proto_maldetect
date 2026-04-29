@@ -5,7 +5,7 @@ import pandas as pd
 import joblib
 import logging
 from pathlib import Path
-from sklearn.preprocessing import StandardScaler # Dùng Standard Scaling để tối ưu Transformer
+from sklearn.preprocessing import StandardScaler 
 
 # ==========================================
 # CẤU HÌNH LOGGING
@@ -24,7 +24,6 @@ EPS = 1e-6
 def run(train_csv_path, val_csv_path, dir_metadata, dir_processed, target_col):
     logging.info("-> Running SENSITIVE Preprocess Pipeline (Signal Preservation)...")
 
-    # Load dữ liệu
     df_train = pd.read_csv(train_csv_path)
     df_val = pd.read_csv(val_csv_path)
 
@@ -54,9 +53,9 @@ def run(train_csv_path, val_csv_path, dir_metadata, dir_processed, target_col):
     }
 
     # ==========================================
-    # STEP 1 — CLIPPING (Outer Fence 3*IQR)
+    # STEP 1 — CLIPPING (FIX: Dùng thẳng q01 và q99)
     # ==========================================
-    logging.info("   [1/3] Supervised Clipping (Outer Fences)...")
+    logging.info("   [1/3] Hard Clipping (q01 - q99)...")
     for group_name, g in groups_summary.items():
         audit_report["groups"][group_name] = {
             "action_label": g["action"],
@@ -70,17 +69,9 @@ def run(train_csv_path, val_csv_path, dir_metadata, dir_processed, target_col):
             if col not in X_train.columns: continue
             
             s = stats[col]
-            q25 = s.get("quantiles", {}).get("25%", 0.0)
-            q75 = s.get("quantiles", {}).get("75%", 0.0)
-            iqr = q75 - q25
-            
-            lower_fence = q25 - 3 * iqr
-            upper_fence = q75 + 3 * iqr
-            
-            q01 = s.get("quantiles", {}).get("1%", 0.0)
-            q99 = s.get("quantiles", {}).get("99%", 0.0)
-            lower_fence = min(lower_fence, q01)
-            upper_fence = max(upper_fence, q99)
+            # Bỏ tính toán IQR cồng kềnh, dùng chặn 2 đầu cứng
+            lower_fence = s.get("quantiles", {}).get("1%", 0.0)
+            upper_fence = s.get("quantiles", {}).get("99%", 0.0)
 
             X_train[col] = X_train[col].clip(lower=lower_fence, upper=upper_fence)
             X_val[col] = X_val[col].clip(lower=lower_fence, upper=upper_fence)
@@ -92,32 +83,31 @@ def run(train_csv_path, val_csv_path, dir_metadata, dir_processed, target_col):
             }
 
     # ==========================================
-    # STEP 2 — TRANSFORM (Signed Square Root)
+    # STEP 2 — TRANSFORM (FIX: Dùng Signed Log1p thay vì SQRT)
     # ==========================================
-    logging.info("   [2/3] Transforming (Signed SQRT / Handling tails)...")
+    logging.info("   [2/3] Transforming (Signed Log1p)...")
     for group_name, g in groups_summary.items():
         action = g["action"]
         cols = [c for c in g["features"].keys() if c in X_train.columns]
         if not cols: continue
 
         if action in ["TRANSFORM_LONG_TAIL_RIGHT", "TRANSFORM_LONG_TAIL_LEFT", "TRANSFORM_HEAVY_TAIL"]:
-            X_train[cols] = np.sign(X_train[cols]) * np.sqrt(np.abs(X_train[cols]))
-            X_val[cols] = np.sign(X_val[cols]) * np.sqrt(np.abs(X_val[cols]))
-            audit_report["groups"][group_name]["transform_math"] = "Signed Square Root (np.sign(x) * sqrt(|x|))"
+            # Dùng np.log1p để xử lý mượt các giá trị gần 0 và giữ scale tốt cho số lớn
+            X_train[cols] = np.sign(X_train[cols]) * np.log1p(np.abs(X_train[cols]))
+            X_val[cols] = np.sign(X_val[cols]) * np.log1p(np.abs(X_val[cols]))
+            audit_report["groups"][group_name]["transform_math"] = "Signed Log1p (np.sign(x) * np.log1p(abs(x)))"
         elif action == "TRANSFORM_OUTLIER":
              audit_report["groups"][group_name]["transform_math"] = "Outlier Clipped Only"
 
     # ==========================================
-    # STEP 3 — SCALING (Feature-wise Standard Scaling)
-    # THAY ĐỔI: Không scale theo Max của cả group nữa. Scale độc lập từng cột.
-    # FT-Transformer cực kỳ chuộng dữ liệu có Mean=0 và Std=1
+    # STEP 3 — SCALING (FIX: Scale mọi thứ trừ Binary)
     # ==========================================
     logging.info("   [3/3] Scaling (Feature-wise StandardScaler)...")
     
-    # Lọc ra các cột cần scale (Bỏ qua Binary/Rare vì chúng có cấu trúc rời rạc đặc biệt)
+    # Kể cả biến RARE cũng phải scale để Transformer không bị nhiễu do chênh lệch độ lớn
     cols_to_scale = []
     for group_name, g in groups_summary.items():
-        if "BINARY" not in g["action"] and "RARE" not in g["action"]:
+        if "BINARY" not in g["action"]:  # Chỉnh sửa: Chỉ chừa BINARY ra, RARE vẫn đưa vào scale
             cols_to_scale.extend([c for c in g["features"].keys() if c in X_train.columns])
     
     if cols_to_scale:

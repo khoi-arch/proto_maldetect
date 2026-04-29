@@ -26,7 +26,7 @@ def assign_action(s, total_rows=None):
     q50 = s.get("quantiles", {}).get("50%", 0.0)
     q99 = s.get("quantiles", {}).get("99%", 0.0)
     max_val = s.get("max", s.get("quantiles", {}).get("100%", q99))
-    std = s.get("std", 0.0)  # Cần std để check outlier chuẩn xác
+    std = s.get("std", 0.0)  
     
     real_spread = q99 - q01
     unique_vals = s.get("unique_values", 0)
@@ -52,18 +52,21 @@ def assign_action(s, total_rows=None):
             return "KEEP_RAW_BINARY"
 
     # ---------------------------------------------------------
-    # 3. RARE CHECK (CẬP NHẬT: Kết hợp count và ratio)
+    # 3. RARE CHECK (FIX: DROP CÁC FEATURE QUÁ HIẾM < 0.001)
     # ---------------------------------------------------------
     rare_ratio = 1.0 - zero_ratio
-    rare_count = total_rows * rare_ratio if total_rows is not None else float('inf')
     
+    # RULE MỚI: Nếu quá hiếm thì vứt luôn, không thương tiếc
+    if rare_ratio < 0.001:
+        return "DROP_EXTREME_RARE"
+        
+    rare_count = total_rows * rare_ratio if total_rows is not None else float('inf')
     if rare_count < 50 or rare_ratio < 0.005:
         return "RARE_NEED_SCORING"
 
     # ---------------------------------------------------------
     # 4. TRANSFORM CHECK
     # ---------------------------------------------------------
-    # Outlier áp đảo 
     median_safe = q50 if abs(q50) > EPS else EPS
     std_safe = std if std > EPS else (real_spread / 4.0 if real_spread > 0 else EPS)
     
@@ -74,11 +77,9 @@ def assign_action(s, total_rows=None):
        (abs(q99) > EPS and (max_val / q99) > 10):
         return "TRANSFORM_OUTLIER"
 
-    # Heavy tail (2 phía)
     if kurt > 5.0:  
         return "TRANSFORM_HEAVY_TAIL"
 
-    # Long tail (đuôi dài)
     if skew > 1.0:
         return "TRANSFORM_LONG_TAIL_RIGHT"
     elif skew < -1.0:
@@ -91,7 +92,6 @@ def assign_action(s, total_rows=None):
 
 # ==========================================
 # STEP 3: GROUPING TRONG CÙNG 1 ACTION
-# (CẬP NHẬT: Xử lý cả Spread Ratio và Max Ratio)
 # ==========================================
 def group_by_scale_and_max(features, stats_dict, base_multiplier=3, max_ratio_threshold=10.0):
     log_threshold = np.log10(base_multiplier)
@@ -106,12 +106,9 @@ def group_by_scale_and_max(features, stats_dict, base_multiplier=3, max_ratio_th
         spread = real_spread if real_spread > 0 else EPS
         scale = np.log10(spread + EPS)
         
-        # Lấy độ lớn tuyệt đối của max để xét domination
         max_magnitude = abs(max_val) if abs(max_val) > EPS else EPS
-        
         items.append((col, scale, max_magnitude))
 
-    # Sort theo spread scale trước
     items.sort(key=lambda x: x[1])
 
     groups = []
@@ -135,9 +132,7 @@ def group_by_scale_and_max(features, stats_dict, base_multiplier=3, max_ratio_th
         new_min_max = min(current_min_max, max_mag)
         new_max_max = max(current_max_max, max_mag)
 
-        # Điều kiện 1: Chênh lệch log scale (Spread Ratio <= 3)
         spread_ok = (new_max_scale - new_min_scale) <= log_threshold
-        # Điều kiện 2: Tránh Max Domination (Max Value Ratio <= 10)
         max_ratio_ok = (new_max_max / new_min_max) <= max_ratio_threshold
 
         if spread_ok and max_ratio_ok:
@@ -147,7 +142,6 @@ def group_by_scale_and_max(features, stats_dict, base_multiplier=3, max_ratio_th
             current_min_max = new_min_max
             current_max_max = new_max_max
         else:
-            # Ngắt group, lưu group hiện tại và tạo group mới
             groups.append([c[0] for c in current_group])
             current_group = [(col, max_mag)]
             current_min_scale = scale
@@ -176,7 +170,6 @@ def run(stats_json_path, groups_json_path, base_multiplier=3):
     stats_dict = full_data.get("features", {})
     total_rows = full_data.get("_summary", {}).get("total_rows_analyzed", None)
 
-    # Khởi tạo Rare Scorer (Chỉ chạy Case B Bayes)
     rare_scorer = RareFeatureScorer(alpha=2.0, k=10.0, base_rate=0.5)
 
     dropped_cols = []
@@ -193,7 +186,6 @@ def run(stats_json_path, groups_json_path, base_multiplier=3):
         "TRANSFORM_HEAVY_TAIL": []
     }
 
-    # BƯỚC 1 & 2: Phân loại nhãn và Áp dụng Rare Scoring
     for col, s in stats_dict.items():
         action = assign_action(s, total_rows)
         
@@ -212,7 +204,6 @@ def run(stats_json_path, groups_json_path, base_multiplier=3):
     print(f"  🗑️ Dropped {len(dropped_cols)} invalid/noise features")
     print(f"  🔍 Processed {len(rare_proofs)} rare features through Scorer")
 
-    # BƯỚC 3: Grouping theo Semantic Type, Độ rộng Spread và Max Domination
     final_groups = []
     group_id = 0
 
@@ -220,7 +211,6 @@ def run(stats_json_path, groups_json_path, base_multiplier=3):
         if not features:
             continue
 
-        # Tách feature theo Semantic Type trước khi xét scale
         semantic_buckets = {}
         for col in features:
             sem_type = get_semantic_type(col)
@@ -228,7 +218,6 @@ def run(stats_json_path, groups_json_path, base_multiplier=3):
                 semantic_buckets[sem_type] = []
             semantic_buckets[sem_type].append(col)
 
-        # Grouping trên từng sub-bucket (Action + Semantic Type)
         for sem_type, sem_features in semantic_buckets.items():
             subgroups = group_by_scale_and_max(sem_features, stats_dict, base_multiplier, max_ratio_threshold=10.0)
 
@@ -241,7 +230,6 @@ def run(stats_json_path, groups_json_path, base_multiplier=3):
                 })
                 group_id += 1
 
-    # BƯỚC 4: XUẤT METADATA & DOWNSTREAM EXECUTION PARAMETERS
     groups_summary = {}
     feature_to_group = {}
 
@@ -313,7 +301,6 @@ def run(stats_json_path, groups_json_path, base_multiplier=3):
             "features": feature_proofs
         }
 
-    # Tracking lý do bị Drop
     dropped_proofs = {}
     for item in dropped_cols:
         col = item[0]
@@ -356,10 +343,6 @@ def run(stats_json_path, groups_json_path, base_multiplier=3):
 
     print(f"  ✅ Done: {len(final_groups)} groups created")
 
-
-# ==========================================
-# EXECUTOR
-# ==========================================
 if __name__ == "__main__":
     FILE_PATH = Path(__file__).resolve()
     PROJECT_ROOT = FILE_PATH.parent.parent 
