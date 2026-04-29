@@ -11,13 +11,17 @@ class FeatureTokenizer(nn.Module):
     """
     def __init__(self, num_features, embed_dim):
         super().__init__()
+        # Trọng số (weight) và độ lệch (bias) riêng cho từng feature
         self.weight = nn.Parameter(torch.Tensor(num_features, embed_dim))
         self.bias = nn.Parameter(torch.Tensor(num_features, embed_dim))
         
+        # Khởi tạo giá trị ngẫu nhiên chuẩn (Kaiming He)
         nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         nn.init.zeros_(self.bias)
 
     def forward(self, x):
+        # Đầu vào x có shape: [Batch_size, Num_features]
+        # Đầu ra có shape: [Batch_size, Num_features, Embed_dim]
         return x.unsqueeze(-1) * self.weight + self.bias
 
 
@@ -25,10 +29,10 @@ class FeatureTokenizer(nn.Module):
 # 2. KIẾN TRÚC HIERARCHICAL FT-TRANSFORMER
 # ==========================================
 class FTTransformer(nn.Module):
-    # ĐÃ TĂNG SCALE: embed_dim=128, n_heads=8, n_layers=4
     def __init__(self, num_features, num_classes, embed_dim=128, n_heads=8, n_layers=4, dropout=0.1, pooling_mode='mean'):
         """
         Bản nâng cấp Hierarchical: Tách làm 2 chóp dự đoán để trị dứt điểm mất cân bằng.
+        - embed_dim=128, n_heads=8, n_layers=4 để đủ sức chứa cho 15 loại mã độc.
         """
         super().__init__()
         self.pooling_mode = pooling_mode
@@ -40,6 +44,7 @@ class FTTransformer(nn.Module):
         self.input_dropout = nn.Dropout(dropout)
         
         # --- POSITIONAL EMBEDDING ---
+        # Khởi tạo ma trận rỗng dư 1 thẻ cho CLS token (num_features + 1)
         self.feature_embeddings = nn.Parameter(torch.empty(1, num_features + 1, embed_dim))
         nn.init.trunc_normal_(self.feature_embeddings, std=0.02)
         
@@ -59,7 +64,7 @@ class FTTransformer(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
         
-        # --- HIERARCHICAL CLASSIFICATION HEADS ---
+        # --- CLASSIFICATION HEADS ---
         self.ln = nn.LayerNorm(embed_dim)
         self.head_dropout = nn.Dropout(0.2)
         
@@ -95,11 +100,9 @@ class FTTransformer(nn.Module):
         out = self.ln(out)
         out = self.head_dropout(out)
         
-        # Trả về cả 2 đầu logits cùng lúc
-        logits_binary = self.binary_head(out)
-        logits_family = self.family_head(out)
-        
-        return logits_binary, logits_family
+        # QUAN TRỌNG: Chỉ trả về vector đặc trưng (out), không gọi 2 cái head ở đây.
+        # Việc gọi head sẽ được thực hiện thủ công trong train.py để cô lập gradient.
+        return out
 
 
 # ==========================================
@@ -124,8 +127,12 @@ if __name__ == "__main__":
         pooling_mode='mean'
     )
     
-    logits_bin, logits_fam = model(dummy_x)
+    # Model giờ trả về embeddings
+    out = model(dummy_x)
+    logits_bin = model.binary_head(out)
+    logits_fam = model.family_head(out)
     
+    print(f"[*] Đầu ra Vector Đặc trưng: {out.shape} -> [Batch, Embed_dim]")
     print(f"[*] Đầu ra Nhánh Binary: {logits_bin.shape} -> [Batch, 2]")
     print(f"[*] Đầu ra Nhánh Family: {logits_fam.shape} -> [Batch, 15]")
     print("[*] Trạng thái: ✅ Mô hình phân tầng chạy thành công!")
