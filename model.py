@@ -38,9 +38,10 @@ class FTTransformer(nn.Module):
         self.pooling_mode = pooling_mode
         self.embed_dim = embed_dim
         
-        # --- PRE-NORM (SOTA Trick cho dữ liệu nhiễu) ---
-        # Chuẩn hóa ngay trên các con số nguyên thủy để tránh bùng nổ trước khi vào Tokenizer
-        self.pre_norm = nn.LayerNorm(num_features)
+        # --- PRE-NORM (ĐÃ SỬA LỖI) ---
+        # Dùng BatchNorm1d thay vì LayerNorm để chuẩn hóa ĐỘC LẬP từng feature dọc theo batch.
+        # Điều này giữ nguyên ý nghĩa vật lý của từng cột dữ liệu.
+        self.pre_norm = nn.BatchNorm1d(num_features)
         
         # --- TOKENIZER & NORMALIZATION ---
         self.tokenizer = FeatureTokenizer(num_features, embed_dim)
@@ -78,7 +79,7 @@ class FTTransformer(nn.Module):
     def forward(self, x):
         b = x.shape[0] 
         
-        # Áp dụng LayerNorm đầu vào để nén nhiễu (Pre-Norm)
+        # Áp dụng BatchNorm đầu vào để nén nhiễu (Pre-Norm)
         x = self.pre_norm(x)
         
         x = self.tokenizer(x)

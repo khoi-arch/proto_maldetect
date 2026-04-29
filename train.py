@@ -28,8 +28,8 @@ def evaluate(model, loader, device, criterion, class_prior=None, label_names=Non
 
             # --- SOTA TRICK: LOGIT ADJUSTMENT TẠI BƯỚC INFERENCE ---
             if class_prior is not None:
-                # Cộng log_prior để bù lại độ vặn xoắn do class_weights sinh ra lúc train
-                adjusted_logits = logits + torch.log(class_prior + 1e-9)
+                # ĐÃ SỬA LỖI TOÁN HỌC: Phải là DẤU TRỪ để kéo class hiếm lên
+                adjusted_logits = logits - torch.log(class_prior + 1e-9)
                 preds = torch.argmax(adjusted_logits, dim=1)
             else:
                 preds = torch.argmax(logits, dim=1)
@@ -69,7 +69,7 @@ def train_model(
 ):
     model = model.to(device)
 
-    print("\n[*] Đang cấu hình Weighted CrossEntropy & Logit Adjustment...")
+    print("\n[*] Đang cấu hình Weighted CrossEntropy...")
     
     # --- 1. TÍNH TOÁN CLASS PRIOR VÀ TRỌNG SỐ ---
     class_counts = np.bincount(train_labels)
@@ -91,7 +91,7 @@ def train_model(
         num_workers=train_loader.num_workers if hasattr(train_loader, 'num_workers') else 0
     )
 
-    # --- 3. DÙNG CROSS ENTROPY THUẦN TÚY KÈM WEIGHTS (Vứt bỏ Focal Loss) ---
+    # --- 3. DÙNG CROSS ENTROPY KÈM WEIGHTS ---
     criterion = nn.CrossEntropyLoss(weight=alpha_weights)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -132,9 +132,10 @@ def train_model(
             total_loss += loss.item()
             loop.set_postfix(loss=loss.item())
 
-        # Truyền thêm class_prior vào Evaluate để thực hiện Logit Adjustment
+        # TRÁNH XUNG ĐỘT KÉP: Đã dùng Weighted CE lúc train thì KHÔNG dùng Logit Adjustment lúc test.
+        # Đã truyền class_prior=None. (Nếu muốn test Logit Adjustment, bỏ CE Weight đi và đổi None thành class_prior).
         val_loss, val_acc, val_f1, val_report, pred_dist = evaluate(
-            model, val_loader, device, criterion, class_prior, label_names
+            model, val_loader, device, criterion, class_prior=None, label_names=label_names
         )
 
         print(f"\n📊 Epoch {epoch+1}")
